@@ -1,6 +1,7 @@
 from django.db import models
 from django.core.validators import MinValueValidator
 from django.utils import timezone
+from phonenumber_field.modelfields import PhoneNumberField
 
 class ProductCategory(models.Model):
     title = models.CharField(
@@ -46,8 +47,10 @@ class Product(models.Model):
 
 
 class Vk_user(models.Model):
-    name = models.CharField('Имя пользователя', max_length=100)
+    name = models.CharField('Имя пользователя', max_length=100, null=True)
     vk_id = models.IntegerField('ID пользователя')
+    cart = models.CharField('Корзина для покупок', max_length=1000, null=True, blank=True)
+    phonenumber = PhoneNumberField('Номер телефона клиента', blank=True, null=True)
     class Meta:
         verbose_name = 'пользователь'
         verbose_name_plural = 'пользователи'
@@ -66,6 +69,7 @@ class Order(models.Model):
     user = models.ForeignKey(
         Vk_user,
         verbose_name='Заказчик',
+        related_name='orders',
         on_delete=models.CASCADE,
         null=True
     )

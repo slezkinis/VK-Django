@@ -1,0 +1,5 @@
+django-phonenumber-field==6.3.0
+django
+python-dotenv
+phonenumbers==8.12.51
+Pillow

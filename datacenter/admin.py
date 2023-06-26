@@ -10,7 +10,10 @@ class Order_elementsInline(admin.TabularInline):
 
 @admin.register(Vk_user)
 class Vk_userAdmin(admin.ModelAdmin):
-    pass
+    readonly_fields = [
+        'cart',
+        'vk_id'
+    ]
 
 
 @admin.register(Order)
@@ -39,7 +42,6 @@ class ProductAdmin(admin.ModelAdmin):
         'title',
         'category__title',
     ]
-
 
 
 
