@@ -32,6 +32,14 @@ def bot1():
     photo_uploader = PhotoMessageUploader(vk.api)
 
 
+    def get_user(u):
+        user = Vk_user.objects.get(vk_id=u)
+        return {
+            'name': user.name,
+            'id': user.vk_id,
+            'num_boughts': user.orders.count(),
+            'phone': user.phonenumber
+        }
     def get_keyboard_categories():
         keyboard = Keyboard(one_time = False, inline = True)
         for product in ProductCategory.objects.all():
@@ -48,11 +56,48 @@ def bot1():
         else:
             return [int(i) for i in cart.split('; ')]
 
-    
+
+    def create_order(u, products):
+        user = Vk_user.objects.get(vk_id=u)
+        order = Order.objects.create(
+            user=user,
+        )
+        for i in products:
+            product = Product.objects.get(id=i)
+            order_el = OrderElements.objects.create(
+                order=order,
+                product=product,
+                quantity=1,
+                price=product.price
+            )
     def update_uder(user, cart):
         u = Vk_user.objects.get(vk_id=user)
-        u.cart = '; '.join(cart)
+        if cart is None:
+            u.cart = None
+        else:
+            u.cart = '; '.join(cart)
         u.save()
+    
+
+    def get_user_orders(u):
+        user = Vk_user.objects.get(vk_id=u)
+        otv = []
+        for order in user.orders.all():
+            all_status = {
+                'first': 'В обработке',
+                'second': 'В пути',
+                'third': 'Доставлен',
+                'canceled': 'Отменён'
+            }
+            order_data = {
+                'status': all_status[order.status],
+                'address': order.address,
+                'created_at': order.created_at,
+                'delivered_at': order.delivered_at,
+                'products': [{'name': i.product.title, 'quantity': i.quantity, 'price': int(i.price)} for i in order.products.all()]
+            }
+            otv.append(order_data)
+        return otv
 
 
     def get_keyboard_products(category):
@@ -117,20 +162,43 @@ def bot1():
         loop = asyncio.get_running_loop()
         user_cart = await loop.run_in_executor(None, get_user_cart, message.from_id)
         products = []
+        keyboard = Keyboard(inline=True)
         for num, i in enumerate(user_cart[::-1], 1):
             product = await loop.run_in_executor(None, get_product, i)
             text = f'{num}. {product["title"]} {product["price"]} руб.'
             products.append(text)
-        keyboard = Keyboard(inline=True)
-        keyboard.add(Callback('Оплатить', payload={'cmd': ''}), color=KeyboardButtonColor.POSITIVE)
-        keyboard.row()
+            keyboard.add(Callback(num, payload={'cmd': f'remove_{product["id"]}'}), color=KeyboardButtonColor.NEGATIVE)
+        if products:
+            keyboard.row()
+            keyboard.add(Callback('Оплатить', payload={'cmd': 'pay'}), color=KeyboardButtonColor.POSITIVE)
+            keyboard.row()
         keyboard.add(Callback('🚫 Закрыть', payload={'cmd': 'close'}))
         otv = "\n".join(products)
+        if products:
+            await message.answer(
+                f'Эти товары у Вас в корзине: \n{otv}\nНажмите кнопку с цифрой товара, чтобы удалить его из корзины!',
+                keyboard=keyboard
+            )
+        else:
+            await message.answer(
+                f'Ваша корзина пуста:(',
+                keyboard=keyboard
+            )
+        
+    
+
+    @vk.on.private_message(text='📱 Профиль')
+    async def profile(message: Message):
+        loop = asyncio.get_running_loop()
+        user = await loop.run_in_executor(None, get_user, message.from_id)
+        text = f'🙍‍♂ Пользователь: {user["name"]}\n🆔 ID: {user["id"]}\n📞 Номер телефона: {user["phone"]}\n------------------\n🛒 Количество заказов: {user["num_boughts"]} шт.'
+        keyboard = Keyboard(inline=True)
+        keyboard.add(Callback('Ваши заказы', payload={'cmd': 'orders'}))
+        keyboard.add(Callback('🚫 Закрыть', payload={'cmd': 'close'}))
         await message.answer(
-            f'Эти товары у Вас в корзине: \n{otv}',
+            text,
             keyboard=keyboard
         )
-        
     #     global admin
     #     admin = True
     #     sections = db.get_all_sections()
@@ -148,11 +216,52 @@ def bot1():
         await message.answer(f'Вы успешно оплатили подписку в размере {message.attachments[0].amount} рублей!')
 
 
+
     @vk.on.raw_event(GroupEventType.MESSAGE_EVENT, dataclass=GroupTypes.MessageEvent)
     async def message_event_handLer(event: GroupTypes.MessageEvent):
         await vk.api.messages.delete(peer_id=event.object.peer_id, message_ids=event.object.conversation_message_id + 1, delete_for_all=True, group_id=event.group_id)
         if event.object.payload['cmd'] == 'close':
             return
+        elif event.object.payload['cmd'] == 'pay':
+            loop = asyncio.get_running_loop()
+            cart = await loop.run_in_executor(None, get_user_cart, event.object.user_id)
+            products2 = []
+            keyboard = Keyboard(inline=True)
+            keyboard.add(Callback('🚫 Закрыть', payload={'cmd': 'close'}))
+            for i in cart:
+                product = await loop.run_in_executor(None, get_product, int(i))
+                products2.append(product['id'])
+            await loop.run_in_executor(None, create_order, event.object.user_id, products2)
+            await loop.run_in_executor(None, update_uder, event.object.user_id, None)
+            await vk.api.messages.send(
+                user_id=event.object.user_id,
+                random_id=0,
+                peer_id=event.object.peer_id,
+                message='Ваш заказ принят! Вам перезвонят по указанному в профиле номеру для уточнение дополнительной информации! Спасибо, что выбрали нас:)',
+                keyboard=keyboard
+            )
+        elif 'remove_' in event.object.payload['cmd']:
+            keyboard = Keyboard(inline=True)
+            keyboard.add(Callback('🚫 Закрыть', payload={'cmd': 'close'}))
+            loop = asyncio.get_running_loop()
+            product = await loop.run_in_executor(None, get_product, event.object.payload["cmd"].replace("remove_", ""))
+            cart = await loop.run_in_executor(None, get_user_cart, event.object.user_id)
+            if '' in cart:
+                cart.remove('')
+            # print(event.object.user_id in all_users)
+            cart = [str(i) for i in cart]
+            if len(cart) == 1:
+                cart = None
+            else:
+                cart.remove(event.object.payload["cmd"].replace("remove_", ""))
+            await loop.run_in_executor(None, update_uder, event.object.user_id, cart)
+            await vk.api.messages.send(
+                user_id=event.object.user_id,
+                random_id=0,
+                peer_id=event.object.peer_id,
+                message=f'Товар {product["title"]} удалён из корзины',
+                keyboard=keyboard
+            )
         elif event.object.payload['cmd'] == 'start1':
             global need_register
             keyboard = Keyboard()
@@ -210,15 +319,14 @@ def bot1():
             )
         elif 'add_to_cart_' in event.object.payload['cmd']:
             loop = asyncio.get_running_loop()
-            print(1)
             product = await loop.run_in_executor(None, get_product, event.object.payload["cmd"].replace("add_to_cart_", ""))
             cart = await loop.run_in_executor(None, get_user_cart, event.object.user_id)
-            print(cart)
             if '' in cart:
                 cart.remove('')
             # print(event.object.user_id in all_users)
             # print(cart)
-            cart.append(event.object.payload["cmd"].replace("add_to_cart_", ""))
+            cart = [str(i) for i in cart]
+            cart.append(str(event.object.payload["cmd"].replace("add_to_cart_", "")))
             await loop.run_in_executor(None, update_uder, event.object.user_id, cart)
             keyboard = Keyboard(one_time = False, inline = True)
             keyboard.add(Callback("Назад к категории 🔙", payload={'cmd': f'category_{product["category"]}'}))
@@ -229,9 +337,26 @@ def bot1():
                 message=f'Товар {product["title"]} добавлен в корзину',
                 keyboard=keyboard
             )
+        elif event.object.payload['cmd'] == 'orders':
+            loop = asyncio.get_running_loop()
+            orders = await loop.run_in_executor(None, get_user_orders, event.object.user_id)
+            keyboard = Keyboard(one_time = False, inline = True)
+            keyboard.add(Callback('🚫 Закрыть', payload={'cmd': 'close'}))
+            otv = []
+            for num, i in enumerate(orders, start=1):
+                products = ';\n\n'.join([f'Название: {j["name"]},\n      Цена: {j["price"]} руб.' for j in i['products']])
+                text = f"{num}. Статус: {i['status']},\nКол-во товаров: {len(i['products'])},\n   Товары:\n      {products}"
+                otv.append(text)
+            await vk.api.messages.send(
+                user_id=event.object.user_id,
+                random_id=0,
+                peer_id=event.object.peer_id,
+                message='\n'.join(otv),
+                keyboard=keyboard
+            )
 
     @vk.on.private_message()
-    async def start(message: Message):
+    async def update(message: Message):
         global need_register
         if message.from_id in need_register:
             parsed_number = phonenumbers.parse(message.text, 'RU')

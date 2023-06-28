@@ -75,9 +75,11 @@ class Order(models.Model):
     )
     address = models.CharField(
         verbose_name='Адрес',
-        max_length=200
+        max_length=200,
+        null=True,
+        blank=True
     )
-    status = models.CharField('Статус', choices=STATUSES, default='Менеджер', max_length=100)
+    status = models.CharField('Статус', choices=STATUSES, default='first', max_length=100)
     comment = models.TextField('Комментарий', blank=True)
     created_at = models.DateTimeField('Время создания заказа', default=timezone.now)
     delivered_at = models.DateTimeField('Время доставки заказа', blank=True, null=True)
@@ -87,11 +89,12 @@ class Order(models.Model):
         verbose_name_plural = 'заказы'
     
     def __str__(self) -> str:
-        return f'{self.user} {self.address}'
+        return f'{self.user.name} {self.created_at.date()}'
 
 
 class OrderElements(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, verbose_name='Заказ', related_name='products')
     product = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name='Продукт', related_name='order_elements')
     quantity = models.IntegerField(verbose_name='Количество', validators=[MinValueValidator(1)])
-    price = models.DecimalField(verbose_name='Цена', max_digits=5, decimal_places=2, validators=[MinValueValidator(0)])
+    # price = models.DecimalField(verbose_name='Цена', max_digits=5, decimal_places=2, validators=[MinValueValidator(0)])
+    price = models.FloatField('Цена', validators=[MinValueValidator(0)])
