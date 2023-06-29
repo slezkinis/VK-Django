@@ -171,7 +171,7 @@ def bot1():
         keyboard = Keyboard(inline=True)
         for num, i in enumerate(user_cart[::-1], 1):
             product = await loop.run_in_executor(None, get_product, i)
-            text = f'{num}. {product["title"]} {product["price"]} руб.'
+            text = f'{num}. {product["title"]} | {product["price"]} руб.'
             products.append(text)
             keyboard.add(Callback(num, payload={'cmd': f'remove_{product["id"]}'}), color=KeyboardButtonColor.NEGATIVE)
         if products:
