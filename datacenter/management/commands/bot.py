@@ -18,7 +18,7 @@ need_register = []
 
 def bot1():
     import os
-    from vkbottle import GroupEventType, GroupTypes, Keyboard, Text, VKAPIError
+    from vkbottle import GroupEventType, GroupTypes, Keyboard, Text, VKPayEvent
     from vkbottle.bot import Bot, Message
     from vkbottle import Keyboard, KeyboardButtonColor, Text, OpenLink, Callback, VKPay
     from vkbottle import PhotoMessageUploader
@@ -219,9 +219,16 @@ def bot1():
 
     @vk.on.private_message(payload={'pays': 0})
     async def people_was_pay(message:Message):
+        print(1)
         await message.answer(f'Вы успешно оплатили подписку в размере {message.attachments[0].amount} рублей!')
 
 
+
+
+    @vk.on.payment(VKPayEvent)
+    async def handle_payment(event: VKPayEvent):
+        # Обработка платежа
+        print(1)
 
     @vk.on.raw_event(GroupEventType.MESSAGE_EVENT, dataclass=GroupTypes.MessageEvent)
     async def message_event_handLer(event: GroupTypes.MessageEvent):
@@ -232,9 +239,7 @@ def bot1():
         if event.object.payload['cmd'] == 'close':
             return
         elif event.object.payload['cmd'] == 'pay':
-
             user = await loop.run_in_executor(None, get_user, event.object.user_id)
-            print(1)
             if not user['phone']:
                 need_register.append(event.object.user_id)
                 await vk.api.messages.send(
@@ -248,19 +253,32 @@ def bot1():
             cart = await loop.run_in_executor(None, get_user_cart, event.object.user_id)
             products2 = []
             keyboard = Keyboard(inline=True)
-            keyboard.add(Callback('🚫 Закрыть', payload={'cmd': 'close'}))
+            price = 0
             for i in cart:
                 product = await loop.run_in_executor(None, get_product, int(i))
                 products2.append(product['id'])
-            await loop.run_in_executor(None, create_order, event.object.user_id, products2)
-            await loop.run_in_executor(None, update_uder, event.object.user_id, None)
+                price += product['price']
+            products2 = [str(i) for i in products2]
+            keyboard.add(VKPay(payload={'products': '; '.join(products2)}, hash=f'action=pay-to-group&amount={price}&group_id={221254486}'))
+            keyboard.row()
+            keyboard.add(Callback('🚫 Отменить', payload={'cmd': 'close'}))
             await vk.api.messages.send(
                 user_id=event.object.user_id,
                 random_id=0,
                 peer_id=event.object.peer_id,
-                message='Ваш заказ принят! Вам перезвонят по указанному в профиле номеру для уточнение дополнительной информации! Спасибо, что выбрали нас:)',
+                message=f'С Вас {price} руб. После оплаты с Вами свяжутся по номеру телефона: {user["phone"]}',
                 keyboard=keyboard
             )
+                
+            # await loop.run_in_executor(None, create_order, event.object.user_id, products2)
+            # await loop.run_in_executor(None, update_uder, event.object.user_id, None)
+            # await vk.api.messages.send(
+            #     user_id=event.object.user_id,
+            #     random_id=0,
+            #     peer_id=event.object.peer_id,
+            #     message='Ваш заказ принят! Вам перезвонят по указанному в профиле номеру для уточнение дополнительной информации! Спасибо, что выбрали нас:)',
+            #     keyboard=keyboard
+            # )
         elif 'remove_' in event.object.payload['cmd']:
             keyboard = Keyboard(inline=True)
             keyboard.add(Callback('🚫 Закрыть', payload={'cmd': 'close'}))
@@ -386,7 +404,6 @@ def bot1():
 
     @vk.on.private_message()
     async def update(message: Message):
-        print(1)
         global need_register
         if message.from_id in need_register:
             parsed_number = phonenumbers.parse(message.text, 'RU')
