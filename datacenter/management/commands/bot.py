@@ -3,6 +3,7 @@ from datacenter.models import *
 from project.settings import BOT_TOKEN, ADMIN_ID
 import asyncio
 import phonenumbers
+from pprint import pprint
 
 
 class Command(BaseCommand):
@@ -49,6 +50,10 @@ def bot1():
         return keyboard
 
 
+    def update_phone(u, phone):
+        user = Vk_user.objects.get(vk_id=u)
+        user.phonenumber = phone
+        user.save()
     def get_user_cart(user):
         cart = Vk_user.objects.get(vk_id=user).cart
         if cart is None:
@@ -105,7 +110,7 @@ def bot1():
         for product in Product.objects.filter(category=category):
             keyboard.add(Callback(product.title, payload={'cmd': f'product_{product.id}'}))
         keyboard.row()
-        keyboard.add(Callback('На главный экран', payload={'cmd': 'menu'}))
+        keyboard.add(Callback('Домой', payload={'cmd': 'menu'}))
         return (keyboard, ProductCategory.objects.get(id=category).title)
 
     def get_product(product):
@@ -118,7 +123,10 @@ def bot1():
             'price': int(product_1.price),
             'category': product_1.category.id
         }
-
+            # need_register.append(message.from_id)
+            # await message.answer(
+            #     message = 'Привет! Введите свой номер телефона. В дальнейшем эти данные будут использоваться для связи с Вами:) Формат ввода номера телефона: +7 000 000 00 00',
+            # )
     @vk.on.private_message(text=['Начать'])
     @vk.on.private_message(payload={'cmd': 'start'})
     async def start(message: Message):
@@ -128,11 +136,9 @@ def bot1():
         if message.from_id not in all_users:
             # users_info = await vk.api.users.get(message.from_id)
             # await loop.run_in_executor(None, lambda name, last, id: Vk_user.objects.create(name=f'{name} {last}', vk_id=id), users_info[0].first_name, users_info[0].last_name, message.from_id)
-            need_register.append(message.from_id)
-            await message.answer(
-                message = 'Привет! Введите свой номер телефона. В дальнейшем эти данные будут использоваться для связи с Вами:) Формат ввода номера телефона: +7 000 000 00 00',
-            )
-            return
+            loop = asyncio.get_running_loop()
+            users_info = await vk.api.users.get(message.from_id)
+            loop.run_in_executor(None, lambda name, last, id, phone: Vk_user.objects.create(name=f'{name} {last}', vk_id=id, phonenumber=phone), users_info[0].first_name, users_info[0].last_name, message.from_id, None)
         keyboard = Keyboard()
         keyboard.add(Text('🛒 Товары'), color=KeyboardButtonColor.PRIMARY)
         keyboard.add(Text('📱 Профиль'))
@@ -219,10 +225,25 @@ def bot1():
 
     @vk.on.raw_event(GroupEventType.MESSAGE_EVENT, dataclass=GroupTypes.MessageEvent)
     async def message_event_handLer(event: GroupTypes.MessageEvent):
-        await vk.api.messages.delete(peer_id=event.object.peer_id, message_ids=event.object.conversation_message_id + 1, delete_for_all=True, group_id=event.group_id)
+        loop = asyncio.get_running_loop()
+        mes = await vk.api.messages.get_history(user_id=event.object.user_id, count=2, offset=0)
+        # count = vk.api.messages.get_history(user_id=event.object.user_id)['count']
+        await vk.api.messages.delete(peer_id=event.object.peer_id, message_ids=mes.items[0].id, delete_for_all=True, group_id=event.object.user_id)
         if event.object.payload['cmd'] == 'close':
             return
         elif event.object.payload['cmd'] == 'pay':
+
+            user = await loop.run_in_executor(None, get_user, event.object.user_id)
+            print(1)
+            if not user['phone']:
+                need_register.append(event.object.user_id)
+                await vk.api.messages.send(
+                    user_id=event.object.user_id,
+                    random_id=0,
+                    peer_id=event.object.peer_id,
+                    message = 'Привет! Введите свой номер телефона. В дальнейшем эти данные будут использоваться для связи с Вами:) Формат ввода номера телефона: +7 000 000 00 00',
+                )
+                return
             loop = asyncio.get_running_loop()
             cart = await loop.run_in_executor(None, get_user_cart, event.object.user_id)
             products2 = []
@@ -263,7 +284,6 @@ def bot1():
                 keyboard=keyboard
             )
         elif event.object.payload['cmd'] == 'start1':
-            global need_register
             keyboard = Keyboard()
             keyboard.add(Text('🛒 Товары'), color=KeyboardButtonColor.PRIMARY)
             keyboard.add(Text('📱 Профиль'))
@@ -343,32 +363,42 @@ def bot1():
             keyboard = Keyboard(one_time = False, inline = True)
             keyboard.add(Callback('🚫 Закрыть', payload={'cmd': 'close'}))
             otv = []
-            for num, i in enumerate(orders, start=1):
-                products = ';\n\n'.join([f'Название: {j["name"]},\n      Цена: {j["price"]} руб.' for j in i['products']])
-                text = f"{num}. Статус: {i['status']},\nКол-во товаров: {len(i['products'])},\n   Товары:\n      {products}"
-                otv.append(text)
-            await vk.api.messages.send(
-                user_id=event.object.user_id,
-                random_id=0,
-                peer_id=event.object.peer_id,
-                message='\n'.join(otv),
-                keyboard=keyboard
-            )
+            if orders:
+                for num, i in enumerate(orders, start=1):
+                    products = ';\n\n'.join([f'Название: {j["name"]},\n      Цена: {j["price"]} руб.' for j in i['products']])
+                    text = f"{num}. Статус: {i['status']},\nКол-во товаров: {len(i['products'])},\n   Товары:\n      {products}"
+                    otv.append(text)
+                await vk.api.messages.send(
+                    user_id=event.object.user_id,
+                    random_id=0,
+                    peer_id=event.object.peer_id,
+                    message='\n'.join(otv),
+                    keyboard=keyboard
+                )
+            else:
+                await vk.api.messages.send(
+                    user_id=event.object.user_id,
+                    random_id=0,
+                    peer_id=event.object.peer_id,
+                    message=f'Вы ничего не заказывали',
+                    keyboard=keyboard
+                )
 
     @vk.on.private_message()
     async def update(message: Message):
+        print(1)
         global need_register
         if message.from_id in need_register:
             parsed_number = phonenumbers.parse(message.text, 'RU')
             if phonenumbers.is_valid_number(parsed_number):
                 loop = asyncio.get_running_loop()
                 users_info = await vk.api.users.get(message.from_id)
-                loop.run_in_executor(None, lambda name, last, id, phone: Vk_user.objects.create(name=f'{name} {last}', vk_id=id, phonenumber=phone), users_info[0].first_name, users_info[0].last_name, message.from_id, message.text)
+                loop.run_in_executor(None, update_phone, message.from_id, message.text)
                 keyboard = Keyboard(inline=True)
                 keyboard.add(Callback('🏚️ На главную', payload={'cmd': 'start1'}), color=KeyboardButtonColor.POSITIVE)
                 need_register.remove(message.from_id)
                 await message.answer(
-                    message = 'Спасибо:)',
+                    message = 'Спасибо:) Теперь можете спокойно оплачивать:)',
                     keyboard = (
                     keyboard
                     )
@@ -378,6 +408,6 @@ def bot1():
                 await message.answer(
                     message = 'Проверьте правильность ввода номера телефона'
                 )
-
+            
     # # Толик видиорегистратор система мене
     vk.run_forever()

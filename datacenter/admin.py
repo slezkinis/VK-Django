@@ -18,6 +18,9 @@ class Vk_userAdmin(admin.ModelAdmin):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
+    list_filter = [
+        'status'
+    ]
     inlines = [
         Order_elementsInline,
     ]
