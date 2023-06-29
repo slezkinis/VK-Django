@@ -22,5 +22,6 @@ from .views import *
 app_name = 'project'
 urlpatterns = [
     path('', main),
+    path('callback/', callback),
     path('admin/', admin.site.urls, name='admin'),
 ]

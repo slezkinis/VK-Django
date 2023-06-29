@@ -30,7 +30,7 @@ ADMIN_ID=int(os.getenv('ADMIN_ID'))
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['e2c6-109-252-24-95.ngrok-free.app']
 
 
 # Application definition

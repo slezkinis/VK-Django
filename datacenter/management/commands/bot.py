@@ -18,15 +18,13 @@ need_register = []
 
 def bot1():
     import os
-    from vkbottle import GroupEventType, GroupTypes, Keyboard, Text, VKPayEvent
-    from vkbottle.bot import Bot, Message
+    from vkbottle import GroupEventType, GroupTypes, Keyboard, Text
+    from vkbottle.bot import Bot, Message, Blueprint
     from vkbottle import Keyboard, KeyboardButtonColor, Text, OpenLink, Callback, VKPay
     from vkbottle import PhotoMessageUploader
     from vkbottle.tools import DocMessagesUploader
     from logging import disable, WARN, CRITICAL
-    import json
     import asyncio
-
     disable(level=CRITICAL)
     bot_token = BOT_TOKEN
     vk = Bot(bot_token)
@@ -192,7 +190,18 @@ def bot1():
             )
         
     
+    @vk.on.private_message(text='подписка')
+    async def subscribe_handler(message:Message):
+        group_id = 12345678 # Вставьте сюда ваш group_id
+        amount = 1 # Вставьте сюда сумму которую человек должен оплатить
+        pay = (Keyboard(one_time=False, inline=True)
+        .add(VKPay(payload={'pays': 0},  hash=f'action=pay-to-group&amount={amount}&group_id={221254486}')
+        )).get_json()
+        await message.answer('Вот кнопка для оплаты подписки', keyboard=pay)
 
+    @vk.on.private_message(payload={'pays': 0})
+    async def people_was_pay(message:Message):
+        await message.answer(f'Вы успешно оплатили подписку в размере {message.attachments[0].amount} рублей!')
     @vk.on.private_message(text='📱 Профиль')
     async def profile(message: Message):
         loop = asyncio.get_running_loop()
@@ -217,16 +226,11 @@ def bot1():
     #     keyboard.add(Callback('🚫 Закрыть', payload={'cmd': 'close'}))
     #     await message.answer('Это настройка магазина! Вот все категории', keyboard=keyboard)
 
-    @vk.on.private_message(payload={'pays': 0})
-    async def people_was_pay(message:Message):
-        print(1)
-        await message.answer(f'Вы успешно оплатили подписку в размере {message.attachments[0].amount} рублей!')
 
 
 
-
-    @vk.on.payment(VKPayEvent)
-    async def handle_payment(event: VKPayEvent):
+    @vk.on.raw_event(GroupEventType.VKPAY_TRANSACTION)
+    async def handle_payment(event: GroupEventType.VKPAY_TRANSACTION):
         # Обработка платежа
         print(1)
 
@@ -259,7 +263,7 @@ def bot1():
                 products2.append(product['id'])
                 price += product['price']
             products2 = [str(i) for i in products2]
-            keyboard.add(VKPay(payload={'products': '; '.join(products2)}, hash=f'action=pay-to-group&amount={price}&group_id={221254486}'))
+            keyboard.add(VKPay(hash=f'action=transfer-to-group&group_id={221254486}'))
             keyboard.row()
             keyboard.add(Callback('🚫 Отменить', payload={'cmd': 'close'}))
             await vk.api.messages.send(
