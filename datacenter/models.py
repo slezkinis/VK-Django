@@ -61,6 +61,7 @@ class Vk_user(models.Model):
 
 class Order(models.Model):
     STATUSES = (
+        ('payment', 'Проверка платежа'),
         ('first', 'Обработка'),
         ('second', 'Доставка'),
         ('third', 'Доставлен'),
@@ -79,7 +80,7 @@ class Order(models.Model):
         null=True,
         blank=True
     )
-    status = models.CharField('Статус', choices=STATUSES, default='first', max_length=100)
+    status = models.CharField('Статус', choices=STATUSES, default='payment', max_length=100)
     comment = models.TextField('Комментарий', blank=True)
     created_at = models.DateTimeField('Время создания заказа', default=timezone.now)
     delivered_at = models.DateTimeField('Время доставки заказа', blank=True, null=True)

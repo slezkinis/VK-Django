@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 from datacenter.models import *
-from project.settings import BOT_TOKEN, ADMIN_ID
+from project.settings import BOT_TOKEN, GROUP_ID
 import asyncio
 import phonenumbers
 from pprint import pprint
@@ -18,7 +18,7 @@ need_register = []
 
 def bot1():
     import os
-    from vkbottle import GroupEventType, GroupTypes, Keyboard, Text
+    from vkbottle import GroupEventType, GroupTypes, Keyboard, Text, UserEventType
     from vkbottle.bot import Bot, Message, Blueprint
     from vkbottle import Keyboard, KeyboardButtonColor, Text, OpenLink, Callback, VKPay
     from vkbottle import PhotoMessageUploader
@@ -87,6 +87,7 @@ def bot1():
         otv = []
         for order in user.orders.all():
             all_status = {
+                'payment': 'Платёж проверяется',
                 'first': 'В обработке',
                 'second': 'В пути',
                 'third': 'Доставлен',
@@ -121,10 +122,6 @@ def bot1():
             'price': int(product_1.price),
             'category': product_1.category.id
         }
-            # need_register.append(message.from_id)
-            # await message.answer(
-            #     message = 'Привет! Введите свой номер телефона. В дальнейшем эти данные будут использоваться для связи с Вами:) Формат ввода номера телефона: +7 000 000 00 00',
-            # )
     @vk.on.private_message(text=['Начать'])
     @vk.on.private_message(payload={'cmd': 'start'})
     async def start(message: Message):
@@ -132,8 +129,6 @@ def bot1():
         loop = asyncio.get_running_loop()
         all_users = await loop.run_in_executor(None, lambda: [i.vk_id for i in Vk_user.objects.all()])
         if message.from_id not in all_users:
-            # users_info = await vk.api.users.get(message.from_id)
-            # await loop.run_in_executor(None, lambda name, last, id: Vk_user.objects.create(name=f'{name} {last}', vk_id=id), users_info[0].first_name, users_info[0].last_name, message.from_id)
             loop = asyncio.get_running_loop()
             users_info = await vk.api.users.get(message.from_id)
             loop.run_in_executor(None, lambda name, last, id, phone: Vk_user.objects.create(name=f'{name} {last}', vk_id=id, phonenumber=phone), users_info[0].first_name, users_info[0].last_name, message.from_id, None)
@@ -189,19 +184,7 @@ def bot1():
                 keyboard=keyboard
             )
         
-    
-    @vk.on.private_message(text='подписка')
-    async def subscribe_handler(message:Message):
-        group_id = 12345678 # Вставьте сюда ваш group_id
-        amount = 1 # Вставьте сюда сумму которую человек должен оплатить
-        pay = (Keyboard(one_time=False, inline=True)
-        .add(VKPay(payload={'pays': 0},  hash=f'action=pay-to-group&amount={amount}&group_id={221254486}')
-        )).get_json()
-        await message.answer('Вот кнопка для оплаты подписки', keyboard=pay)
 
-    @vk.on.private_message(payload={'pays': 0})
-    async def people_was_pay(message:Message):
-        await message.answer(f'Вы успешно оплатили подписку в размере {message.attachments[0].amount} рублей!')
     @vk.on.private_message(text='📱 Профиль')
     async def profile(message: Message):
         loop = asyncio.get_running_loop()
@@ -214,34 +197,30 @@ def bot1():
             text,
             keyboard=keyboard
         )
-    #     global admin
-    #     admin = True
-    #     sections = db.get_all_sections()
-    #     keyboard = Keyboard(inline=True)
-    #     keyboard.add(Callback('✏️ Добавить новую категорию', payload={'cmd': 'add_new_section'}))
-    #     keyboard.row()
-    #     for section in sections:
-    #         keyboard.add(Callback(section[0], payload={'cmd': f'set-adm_{section[1]}'}))
-    #     keyboard.row()
-    #     keyboard.add(Callback('🚫 Закрыть', payload={'cmd': 'close'}))
-    #     await message.answer('Это настройка магазина! Вот все категории', keyboard=keyboard)
-
-
-
-
-    @vk.on.raw_event(GroupEventType.VKPAY_TRANSACTION)
-    async def handle_payment(event: GroupEventType.VKPAY_TRANSACTION):
-        # Обработка платежа
-        print(1)
 
     @vk.on.raw_event(GroupEventType.MESSAGE_EVENT, dataclass=GroupTypes.MessageEvent)
     async def message_event_handLer(event: GroupTypes.MessageEvent):
         loop = asyncio.get_running_loop()
         mes = await vk.api.messages.get_history(user_id=event.object.user_id, count=2, offset=0)
-        # count = vk.api.messages.get_history(user_id=event.object.user_id)['count']
         await vk.api.messages.delete(peer_id=event.object.peer_id, message_ids=mes.items[0].id, delete_for_all=True, group_id=event.object.user_id)
         if event.object.payload['cmd'] == 'close':
             return
+        elif event.object.payload['cmd'] == 'good_pay':
+            loop = asyncio.get_running_loop()
+            phone = event.object.payload['phone']
+            products2 = event.object.payload['products'].split('; ')
+            # с Вами свяжутся по номеру телефона: {user["phone"]} для проверки платежа и уточнения деталей
+            await loop.run_in_executor(None, create_order, event.object.user_id, products2)
+            await loop.run_in_executor(None, update_uder, event.object.user_id, None)
+            keyboard = Keyboard(inline=True)
+            keyboard.add(Callback('🚫 Закрыть', payload={'cmd': 'close'}))
+            await vk.api.messages.send(
+                user_id=event.object.user_id,
+                random_id=0,
+                peer_id=event.object.peer_id,
+                message=f'Ваш заказ принят! С Вами свяжутся по номеру телефона: {phone} для проверки платежа и уточнения деталей заказа! Спасибо, что выбрали нас:)',
+                keyboard=keyboard
+            )
         elif event.object.payload['cmd'] == 'pay':
             user = await loop.run_in_executor(None, get_user, event.object.user_id)
             if not user['phone']:
@@ -253,7 +232,6 @@ def bot1():
                     message = 'Привет! Введите свой номер телефона. В дальнейшем эти данные будут использоваться для связи с Вами:) Формат ввода номера телефона: +7 000 000 00 00',
                 )
                 return
-            loop = asyncio.get_running_loop()
             cart = await loop.run_in_executor(None, get_user_cart, event.object.user_id)
             products2 = []
             keyboard = Keyboard(inline=True)
@@ -263,26 +241,18 @@ def bot1():
                 products2.append(product['id'])
                 price += product['price']
             products2 = [str(i) for i in products2]
-            keyboard.add(VKPay(hash=f'action=transfer-to-group&group_id={221254486}'))
+            a = keyboard.add(VKPay(payload='', hash=f'action=pay-to-group&group_id={GROUP_ID}&amount={price}'))
             keyboard.row()
+            keyboard.add(Callback('Я оплатил', payload={'cmd': 'good_pay', 'products': '; '.join(products2), 'phone': str(user['phone'])}), color=KeyboardButtonColor.POSITIVE)
+            # keyboard.row()
             keyboard.add(Callback('🚫 Отменить', payload={'cmd': 'close'}))
             await vk.api.messages.send(
                 user_id=event.object.user_id,
                 random_id=0,
                 peer_id=event.object.peer_id,
-                message=f'С Вас {price} руб. После оплаты с Вами свяжутся по номеру телефона: {user["phone"]}',
+                message=f'Оплатите Ваш заказ ({price} руб.). После оплаты нажмите на кнопку "Я оплатил" для получения дополнительной информации',
                 keyboard=keyboard
             )
-                
-            # await loop.run_in_executor(None, create_order, event.object.user_id, products2)
-            # await loop.run_in_executor(None, update_uder, event.object.user_id, None)
-            # await vk.api.messages.send(
-            #     user_id=event.object.user_id,
-            #     random_id=0,
-            #     peer_id=event.object.peer_id,
-            #     message='Ваш заказ принят! Вам перезвонят по указанному в профиле номеру для уточнение дополнительной информации! Спасибо, что выбрали нас:)',
-            #     keyboard=keyboard
-            # )
         elif 'remove_' in event.object.payload['cmd']:
             keyboard = Keyboard(inline=True)
             keyboard.add(Callback('🚫 Закрыть', payload={'cmd': 'close'}))

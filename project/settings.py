@@ -25,12 +25,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure--gyzu4qyi@)cs%r9csyl-xy^macm!=gt@x1h_8hmy*jg*1g#gs'
 BOT_TOKEN=os.getenv('BOT_TOKEN')
-ADMIN_ID=int(os.getenv('ADMIN_ID'))
+GROUP_ID = int(os.getenv('GROUP_ID'))
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['e2c6-109-252-24-95.ngrok-free.app']
+ALLOWED_HOSTS = ['127.0.0.1']
 
 
 # Application definition
