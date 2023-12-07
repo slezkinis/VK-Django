@@ -41,9 +41,18 @@ def bot1():
         }
     def get_keyboard_categories():
         keyboard = Keyboard(one_time = False, inline = True)
+        ch = 1
+        last = False
         for product in ProductCategory.objects.all():
             keyboard.add(Callback(product.title, payload={'cmd': f'category_{product.id}'}))
-        keyboard.row()
+            last = False
+            if ch == 5:
+                ch == 0
+                last = True
+                keyboard.row()
+            ch += 1
+        if not last:
+            keyboard.row()
         keyboard.add(Callback('🚫 Закрыть', payload={'cmd': 'close'}))
         return keyboard
 
@@ -106,9 +115,18 @@ def bot1():
 
     def get_keyboard_products(category):
         keyboard = Keyboard(one_time = False, inline = True)
+        ch = 1
+        last = False
         for product in Product.objects.filter(category=category):
             keyboard.add(Callback(product.title, payload={'cmd': f'product_{product.id}'}))
-        keyboard.row()
+            last = False
+            if ch == 5:
+                last = True
+                keyboard.row()
+                ch == 0
+            ch += 1
+        if not last:
+            keyboard.row()
         keyboard.add(Callback('Домой', payload={'cmd': 'menu'}))
         return (keyboard, ProductCategory.objects.get(id=category).title)
 
@@ -162,13 +180,37 @@ def bot1():
         user_cart = await loop.run_in_executor(None, get_user_cart, message.from_id)
         products = []
         keyboard = Keyboard(inline=True)
+        ch = 1
+        last = False
+        z = 0
+        need_remove = []
         for num, i in enumerate(user_cart[::-1], 1):
-            product = await loop.run_in_executor(None, get_product, i)
-            text = f'{num}. {product["title"]} | {product["price"]} руб.'
+            try:
+                product = await loop.run_in_executor(None, get_product, i)
+            except:
+                z += 1
+                need_remove.append(i)
+                continue
+            text = f'{num - z}. {product["title"]} | {product["price"]} руб.'
             products.append(text)
-            keyboard.add(Callback(num, payload={'cmd': f'remove_{product["id"]}'}), color=KeyboardButtonColor.NEGATIVE)
+            last = False
+            keyboard.add(Callback(num - z, payload={'cmd': f'remove_{product["id"]}'}), color=KeyboardButtonColor.NEGATIVE)
+            if ch == 5:
+                ch = 0
+                last = True
+                keyboard.row()
+            ch += 1
+        need_remove = [str(i) for i in need_remove]
+        for i in need_remove:
+            user_cart = await loop.run_in_executor(None, get_user_cart, message.from_id)
+            user_cart = [str(i) for i in user_cart]
+            if '' in user_cart:
+                user_cart.remove('')
+            user_cart.remove(i)
+            await loop.run_in_executor(None, update_uder, message.from_id, user_cart)
         if products:
-            keyboard.row()
+            if not last:
+                keyboard.row()
             keyboard.add(Callback('Оплатить', payload={'cmd': 'pay'}), color=KeyboardButtonColor.POSITIVE)
             keyboard.row()
         keyboard.add(Callback('🚫 Закрыть', payload={'cmd': 'close'}))
